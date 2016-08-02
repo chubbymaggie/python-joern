@@ -7,16 +7,10 @@ Introduction
 A thin python interface for joern and a set of useful utility
 traversals.
 
-*Warning*: if you are using the current master-branch, this library is
-not for you as the master-branch already contains a python interface
-to joern bundled with joern. This is the python interface for future
-versions of joern (development branch).
-
 Dependencies:
 --
 
-+ py2neo 1.6.1 (http://book.py2neo.org/en/latest/)
-+ py2neo-gremlin (https://github.com/fabsx00/py2neo-gremlin/)
++ py2neo 2.0.7 (http://py2neo.org/2.0/)
 
 
 ### Installation

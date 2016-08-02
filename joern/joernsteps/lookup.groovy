@@ -17,9 +17,17 @@
    
 */
 
-Object.metaClass.queryNodeIndex = { query ->
-	index = g.getRawGraph().index().forNodes(NODE_INDEX)
-	new Neo4jVertexSequence(index.query(query), g)._()
+Object.metaClass.queryNodeIndex = { query, honorVisibility = true ->
+        index = g.getRawGraph().index().forNodes(NODE_INDEX)
+	
+	try{
+	  if(honorVisibility)
+	    new Neo4j2VertexIterable(index.query(query), g)._().visible()
+	   else
+	    new Neo4j2VertexIterable(index.query(query), g)._()
+	}catch(ParseException){
+	  return []._()
+	}
 }
 
 /**
@@ -37,6 +45,18 @@ Object.metaClass.getNodesWithTypeAndCode = { type, code ->
 
 
 /**
+   Retrieve nodes with given type
+   
+   @param type The node type
+   
+*/
+
+Object.metaClass.getNodesWithType = { type ->
+	query = "$NODE_TYPE:$type"
+	queryNodeIndex(query)
+}
+
+/**
    Retrieve nodes with given type and name.
    
    @param type The node type
@@ -44,9 +64,9 @@ Object.metaClass.getNodesWithTypeAndCode = { type, code ->
    
 */
 
-Object.metaClass.getNodesWithTypeAndName = { type, name ->
+Object.metaClass.getNodesWithTypeAndName = { type, name, honorVisibility = true  ->
 	query = "$NODE_TYPE:$type AND $NODE_NAME:$name"
-	queryNodeIndex(query)
+	queryNodeIndex(query, honorVisibility)
 }
 
 /**
@@ -56,15 +76,30 @@ Object.metaClass.getNodesWithTypeAndName = { type, name ->
    
 */
 
-Object.metaClass.getFunctionsByName = { name ->
-	getNodesWithTypeAndName(TYPE_FUNCTION, name)
+Object.metaClass.getFunctionsByName = { name, honorVisibility = true ->
+	getNodesWithTypeAndName(TYPE_FUNCTION, name, honorVisibility)
 }
 
-Object.metaClass.getFunctionsByFilename = { name ->
+Object.metaClass.getFunctionsByParameter = { param ->
+	getNodesWithTypeAndCode(TYPE_PARAMETER, param)
+	.functions()
+}
+
+Object.metaClass.getFunctionsByFilename = { name, honorVisibility = true ->
 	query = "$NODE_TYPE:$TYPE_FILE AND $NODE_FILEPATH:$name"
-	queryNodeIndex(query)
+	queryNodeIndex(query, honorVisibility)
 	.out('IS_FILE_OF')
 	.filter{ it.type == TYPE_FUNCTION }
+}
+
+Object.metaClass.getFunctionsByFileAndName = { filename, name, honorVisibility = true ->
+	getFunctionsByFilename(filename, honorVisibility)
+	.filter{ it.name == name }
+}
+
+Object.metaClass.getFilesByName = { filename, honorVisibility = true ->
+	query = "$NODE_TYPE:$TYPE_FILE AND $NODE_FILEPATH:$filename"
+	queryNodeIndex(query, honorVisibility)
 }
 
 /**
@@ -80,6 +115,31 @@ Object.metaClass.getFunctionASTsByName = { name ->
 }
 
 /**
+   Retrieve all statements (including conditions)
+*/
+
+Object.metaClass.getAllStatements = {
+	queryNodeIndex('isCFGNode:True')
+}
+
+/**
+   Retrieve all conditions
+*/
+
+Object.metaClass.getAllConditions = {
+	getNodesWithType('Condition')
+}
+
+/**
+   Retrieve all calls.
+   
+*/
+
+Object.metaClass.getAllCalls = {
+	getNodesWithType(TYPE_CALL)
+}
+
+/**
    Retrieve calls by name.
    
    @param callee Name of called function
@@ -87,10 +147,13 @@ Object.metaClass.getFunctionASTsByName = { name ->
 */
 
 Object.metaClass.getCallsTo = { callee ->
-	
-	getNodesWithTypeAndCode(TYPE_CALLEE, callee)
-	.parents()
+      
+  getNodesWithTypeAndCode(TYPE_CALLEE, callee)
+  .parents()
+  
 }
+
+
 
 /**
    Retrieve arguments to functions. Corresponds to the traversal
@@ -103,6 +166,15 @@ Object.metaClass.getCallsTo = { callee ->
 
 Object.metaClass.getArguments = { name, i ->
 	getCallsTo(name).ithArguments(i)
+}
+
+Object.metaClass.getConditions = { funcname, regex, filename = null ->
+
+  if(filename == null)
+    getFunctionASTsByName(funcname).match{ it.type == "Condition" && it.code.matches(regex) }
+  else
+    getFunctionsByFileAndName(filename, funcname).functionToAST()
+    .match{ it.type == "Condition" && it.code.matches(regex) } 
 }
 
 

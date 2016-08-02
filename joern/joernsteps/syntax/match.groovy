@@ -13,6 +13,22 @@ Gremlin.defineStep('match', [Vertex, Pipe], { p ->
   _().astNodes().filter(p)
 })
 
+Gremlin.defineStep('matchChildren', [Vertex, Pipe], { p, q={false} ->
+  _().children().loop(1){ !q(it.object) }{ p(it.object) }
+})
+
+/**
+ Walk the tree into the direction of the root
+ stopping at the enclosing statement and output
+ all parents that match the supplied predicate. Note, that this may
+ include the enclosing statement node.
+*/
+
+Gremlin.defineStep('matchParents', [Vertex,Pipe], { p, q={false} ->
+  _().parents().loop(1){it.object.isCFGNode != 'True' && !q(it.object) }{ p(it.object) }
+})
+
+
 /**
    
 */

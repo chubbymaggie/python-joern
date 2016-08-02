@@ -24,3 +24,18 @@ Gremlin.defineStep("functionsToASTNodesOfType", [Vertex,Pipe],{ type ->
 Gremlin.defineStep('functionToFile', [Vertex, Pipe], {
 	_().in(FILE_TO_FUNCTION_EDGE)
 })
+
+/**
+ * For a function node, get callers using `name` property.
+ **/
+
+Gremlin.defineStep('functionToCallers', [Vertex,Pipe], {
+	_().transform{
+
+		funcName = it.name
+		funcName = funcName.split(' ')[-1].trim()
+	   	funcName = funcName.replace('*', '')
+
+		getCallsTo(funcName)
+	}.scatter()
+})

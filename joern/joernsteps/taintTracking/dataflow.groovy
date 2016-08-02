@@ -10,6 +10,18 @@ Gremlin.defineStep('producers', [Vertex,Pipe], { N ->
 	_().statements().In(DATA_FLOW_EDGE, DATA_FLOW_SYMBOL, N )
 })
 
+
+/**
+   Data users of the statement enclosing an AST-node, limited to a
+   set N of symbols.
+
+   N A set of symbols of interest
+*/
+
+Gremlin.defineStep('users', [Vertex,Pipe], { N ->
+	_().statements().Out(DATA_FLOW_EDGE, DATA_FLOW_SYMBOL, N )
+})
+
 /**
    Data producers of the statement enclosing an AST-node.
 */
@@ -17,6 +29,31 @@ Gremlin.defineStep('producers', [Vertex,Pipe], { N ->
 Gremlin.defineStep('sources', [Vertex,Pipe], {
 	_().statements()
 	.in(DATA_FLOW_EDGE)
+})
+
+/**
+   Data consumers of the statement enclosing an AST-node.
+*/
+
+Gremlin.defineStep('sinks', [Vertex,Pipe], {
+	_().statements()
+	.out(DATA_FLOW_EDGE)
+})
+
+/**
+   Data consumers of variables defined in the given ASTs.
+*/
+
+Gremlin.defineStep('astSinks', [Vertex,Pipe], {
+	_().transform{ N = it.defines().code.toList(); it.users(N) }.scatter()
+})
+
+/**
+   Data sources of variables used in the given ASTs.
+*/
+
+Gremlin.defineStep('astSources', [Vertex,Pipe], {
+	_().transform{ N = it.used().code.toList(); it.producers(N) }.scatter()
 })
 
 /**
@@ -30,6 +67,10 @@ Gremlin.defineStep('sources', [Vertex,Pipe], {
 
 Gremlin.defineStep('unsanitized', [Vertex, Pipe], { sanitizer, src = { [1]._() }  ->
   _().uPath(sanitizer, src).firstElem()
+})
+
+Gremlin.defineStep('unsanitizedPaths', [Vertex, Pipe], { sanitizer, src = {[1]._() } ->
+	_().uPath(sanitizer, src)
 })
 
 Gremlin.defineStep('firstElem', [Vertex, Pipe], {
@@ -47,7 +88,8 @@ Gremlin.defineStep('firstElem', [Vertex, Pipe], {
 
 Gremlin.defineStep('uPath', [Vertex, Pipe], { sanitizer, src = { [1]._() } ->
   _().sideEffect{ dst = it; }
-  .uses().sideEffect{ symbol = it.code }
+  .usesFiltered().sideEffect{ symbol = it.code }
+  // .uses().sideEffect{ symbol = it.code }
   .transform{ dst.producers([symbol]) }.scatter()
   .filter{ src(it).toList() != [] }
   .transform{ cfgPaths(symbol, sanitizer, it, dst.statements().toList()[0] ) }.scatter()
@@ -65,7 +107,7 @@ Gremlin.defineStep('uPath', [Vertex, Pipe], { sanitizer, src = { [1]._() } ->
 
 */
 
-cfgPaths = { symbol, sanitizer, src, dst ->
+Object.metaClass.cfgPaths = { symbol, sanitizer, src, dst ->
   _cfgPaths(symbol, sanitizer,
 	    src, dst, [:], [])
 }
@@ -79,16 +121,17 @@ cfgPaths = { symbol, sanitizer, src, dst ->
 
 Object.metaClass._cfgPaths = {symbol, sanitizer, curNode, dst, visited, path ->
   
+  // return an empty set if this node is a sanitizer
+  if( ( path != [] ) && isTerminationNode(symbol, sanitizer, curNode, visited)){
+    return [] as Set
+  }
+
   // return path when destination has been reached
   if(curNode == dst){
     return [path + curNode] as Set
   }
   
-  // return an empty set if this node is a sanitizer
-  if( ( path != [] ) && isTerminationNode(symbol, sanitizer, curNode, visited)){
-    return [] as Set
-  }
-  
+    
   // `h` in the paper is inlined here
   
   def children = curNode._().out(CFG_EDGE).toList()
@@ -97,7 +140,7 @@ Object.metaClass._cfgPaths = {symbol, sanitizer, curNode, dst, visited, path ->
 
   for(child in children){
       
-    def curNodeId = curNode.toString()
+    def curNodeId = curNode.id;
     
     x = _cfgPaths(symbol, sanitizer, child, dst,
 		  visited + [ (curNodeId) : (visited.get(curNodeId, 0) + 1)],
@@ -110,8 +153,8 @@ Object.metaClass._cfgPaths = {symbol, sanitizer, curNode, dst, visited, path ->
     // If we find one path, there's no need to explore the others
     if(!x.isEmpty()){ return x }
 
-    // Limit depth of CFG paths to 20
-    if(path.size() > 20) return []
+    // Limit depth of CFG paths to 30
+    if(path.size() > 30) return []
     
   }
 
@@ -128,11 +171,11 @@ Object.metaClass._cfgPaths = {symbol, sanitizer, curNode, dst, visited, path ->
    @params The map (multiset) of visited nodes
 */
 
-isTerminationNode = { symbol, sanitizer, curNode, visited -> 
+Object.metaClass.isTerminationNode = { symbol, sanitizer, curNode, visited ->
   
-  def curNodeId = curNode.toString()
+  def curNodeId = curNode.id
   
-  sanitizer(curNode).toList() != [] ||
+  sanitizer(curNode, symbol).toList() != [] ||
   (curNode.defines().filter{ it.code == symbol}.toList() != []) ||
   (visited.get(curNodeId) == 2)
 }

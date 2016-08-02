@@ -1,5 +1,7 @@
-from py2neo import neo4j, cypher
-from py2neo_gremlin import Gremlin
+from py2neo import Graph
+from py2neo.ext.gremlin import Gremlin
+from py2neo.packages.httpstream import http
+
 import os
 
 DEFAULT_GRAPHDB_URL = "http://localhost:7474/db/data/"
@@ -10,6 +12,10 @@ class JoernSteps:
     def __init__(self):
         self._initJoernSteps()
         self.initCommandSent = False
+
+        # Bump the py2neo socket timeout from 30s, neo4j doesn't kill queries on timeout so might
+        #  as well let the client pick when to stop.
+        http.socket_timeout = 100000
 
     def setGraphDbURL(self, url):
         """ Sets the graph database URL. By default,
@@ -23,7 +29,7 @@ class JoernSteps:
     
     def connectToDatabase(self):
         """ Connects to the database server."""
-        self.graphDb = neo4j.GraphDatabaseService(self.graphDbURL)
+        self.graphDb = Graph(self.graphDbURL)
         self.gremlin = Gremlin(self.graphDb)
 
     def runGremlinQuery(self, query):
@@ -32,20 +38,31 @@ class JoernSteps:
         assumed that a connection to the database has been
         established. To allow the user-defined steps located in the
         joernsteps directory to be used in the query, these step
-        definitions are prepended to the query."""
+        definitions are sent before the first query."""
         
         if not self.initCommandSent:
-            self.initCommand = self._createInitCommand()
+            self.gremlin.execute(self._createInitCommand())
             self.initCommandSent = True
-            finalQuery = self.initCommand
-        else:
-            finalQuery = ""
-        finalQuery += query
-        return self.gremlin.execute_script(finalQuery)
+
+        return self.gremlin.execute(query)
         
     def runCypherQuery(self, cmd):
         """ Runs the specified cypher query on the graph database."""
-        return cypher.execute(self.graphDb, cmd)
+        return self.graphDb.cypher.execute(cmd)
+
+    def getGraphDbURL(self):
+        return self.graphDbURL
+    
+    """
+    Create chunks from a list of ids.
+    This method is useful when you want to execute many independent 
+    traversals on a large set of start nodes. In that case, you
+    can retrieve the set of start node ids first, then use 'chunks'
+    to obtain disjoint subsets that can be passed to idListToNodes.
+    """
+    def chunks(self, idList, chunkSize):
+        for i in xrange(0, len(idList), chunkSize):
+            yield idList[i:i+chunkSize]
 
     def _initJoernSteps(self):
         self.graphDbURL = DEFAULT_GRAPHDB_URL

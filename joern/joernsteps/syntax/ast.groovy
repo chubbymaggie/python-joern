@@ -11,21 +11,11 @@
 
 
 Gremlin.defineStep('astNodes', [Vertex, Pipe], {
-	def x = [] as Set;
-	_().children().loop(1){true}{true}
+	_().transform{
+	 def x = [] as Set;
+	it.children().loop(1){true}{true}
 	.store(x).optional(2).transform{x+it}.scatter()
-})
-
-/**
-   Traverses to all nodes of the given sub tree that match
-   `predicate`.
-   
-   @param predicate the boolean function to evaluate on each node.
-   
-*/
-
-Gremlin.defineStep('match', [Vertex, Pipe], { predicate -> 
-	_().astNodes().filter(predicate)
+	}.scatter()
 })
 
 /**
@@ -54,21 +44,40 @@ Gremlin.defineStep('ithChildren', [Vertex, Pipe], { i ->
 	_().children().filter{ it.childNum == i}
 })
 
+Object.metaClass.isStatement = { it ->
+  it.isCFGNode == 'True'
+}
+
+
+/**
+ * Traverse to siblings.
+ */
+Gremlin.defineStep('siblings', [Vertex, Pipe], {
+	_().sideEffect{ nodeId = it.id }
+	.parents()
+	.children()
+	.filter{ it.id != nodeId }
+});
+
 /**
    Traverse to statements enclosing supplied AST nodes. This may be
    the node itself.
 */
 
 Gremlin.defineStep('statements', [Vertex,Pipe],{
-	_().ifThenElse{it.isCFGNode == 'True'}
+		_().ifThenElse{isStatement(it)}
       		{ it }
       		{ it.in(AST_EDGE).loop(1){it.object.isCFGNode != 'True'} }
 });
 
 /**
-   Traverse to enclosing functions of AST nodes.
+   Get number of children of an AST node.
 */
 
-Gremlin.defineStep('functions', [Vertex,Pipe],{
-	_().functionId.idToNode()
-});
+Gremlin.defineStep('numChildren', [Vertex, Pipe], {
+	_().transform{ numChildren(it)  }
+})
+
+Object.metaClass.numChildren = { it ->
+	it.out('IS_AST_PARENT').toList().size()
+}
